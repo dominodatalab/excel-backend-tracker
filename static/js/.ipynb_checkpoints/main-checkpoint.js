@@ -2,11 +2,20 @@
 const DOMINO_API_BASE = window.location.origin + window.location.pathname.replace(/\/$/, '');
 const ORIGINAL_API_BASE = window.DOMINO?.API_BASE || '';
 const API_KEY = window.DOMINO?.API_KEY || null;
+// Inline sparkles/star SVG (Heroicons-style) as a data URI for reliable badges
+const AI_ICON_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3l1.5 3 3.5.5-2.5 2 0.6 3.4L12 11l-3.1 1.9.6-3.4-2.5-2L10.5 6 12 3z" fill="#F59E0B" stroke="none"/>
+    <path d="M5 20l1 2 2 .3-1.4 1.1L7 25l-1 1-0.6-1.6L4 24l1-1z" fill="#FBBF24" stroke="none"/>
+    <path d="M18 13l.8 1.6 1.8.3-1.2 1 .3 1.8L18 18l-1.7 1 .3-1.8-1.2-1L16.2 14 18 13z" fill="#FBBF24" stroke="none"/>
+</svg>
+`;
+const AI_ICON_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(AI_ICON_SVG);
 
 // Hardcoded policy IDs
 const POLICY_IDS = {
     'External Model Upload': '42c9adf3-f233-470b-b186-107496d0eb05',
-    'AI Use Case Intake': '42c9adf3-f233-470b-b186-107496d0eb05'  // Using same ID for now, replace with actual second policy ID
+    'AI Use Case Intake': '4a8da911-bb6b-480d-a5a9-9918550c741e'  // Using same ID for now, replace with actual second policy ID
 };
 
 // Global state
@@ -145,6 +154,55 @@ function generateDynamicFields(policy) {
     });
     
     container.innerHTML = fieldsHtml;
+
+    // After rendering dynamic fields, attach listeners to clear AI badges when user edits fields
+    // Text inputs and textareas: on input, if value differs from ai original, remove badge
+    const textFields = container.querySelectorAll('input[type="text"], textarea');
+    textFields.forEach(f => {
+        f.addEventListener('input', (ev) => {
+            const el = ev.target;
+            const orig = el.getAttribute('data-ai-original');
+                    if (orig !== null) {
+                const cur = (el.value || '').toString();
+                if (cur !== orig) {
+                    // remove badge if present (look on the closest .form-group)
+                    const group = el.closest('.form-group');
+                    const badge = group ? group.querySelector('.ai-badge') : null;
+                    if (badge) {
+                        badge.remove();
+                        group.classList.remove('has-ai-badge');
+                    }
+                    el.removeAttribute('data-ai-original');
+                    el.classList.remove('auto-filled');
+                }
+            }
+        });
+    });
+
+    // Radio inputs: on change, clear ai badges in the group if user changes selection
+    const radioInputs = container.querySelectorAll('input[type="radio"][data-label]');
+    radioInputs.forEach(r => {
+        r.addEventListener('change', (ev) => {
+            const lbl = r.getAttribute('data-label');
+            // find any ai-badge for this label and remove if selected value differs from ai suggested
+            const group = container.querySelectorAll(`input[type="radio"][data-label="${CSS.escape(lbl)}"]`);
+                group.forEach(g => {
+                const parent = g.closest('.form-group') || g.closest('label') || g.parentElement;
+                const badge = parent ? parent.querySelector('.ai-badge') : null;
+                if (badge) {
+                    // if the currently checked value does not match data-ai-original, remove
+                    const orig = badge.getAttribute('data-ai-original');
+                    if (orig !== null) {
+                        const checked = Array.from(group).find(x => x.checked);
+                        if (!checked || String(checked.value) !== orig) {
+                            badge.remove();
+                            if (parent && parent.classList) parent.classList.remove('has-ai-badge');
+                        }
+                    }
+                }
+            });
+        });
+    });
 }
 
 // Handle policy selection change
@@ -344,7 +402,7 @@ function updateProgress(data) {
 // Hide loading state
 function hideLoading(button) {
     button.disabled = false;
-    button.innerHTML = 'Register AI Use Case with Domino';
+    button.innerHTML = 'Register AI Use Case';
     
     const progressContainer = document.getElementById('progress-container');
     if (progressContainer) {
@@ -533,6 +591,11 @@ function resetForm() {
     if (progressContainer) {
         progressContainer.remove();
     }
+    // remove any AI badges and group markers
+    try {
+        document.querySelectorAll('.ai-badge').forEach(b => b.remove());
+        document.querySelectorAll('.form-group.has-ai-badge').forEach(g => g.classList.remove('has-ai-badge'));
+    } catch (e) {}
 }
 
 // Handle form submission with SSE progress
@@ -612,6 +675,334 @@ async function handleSubmit(event) {
     }
 }
 
+// Handle Assist with Governance action
+async function handleAssistGovernance(event) {
+    // Basic validation
+    if (!appState.selectedPolicy) {
+        showErrors(['Please select a policy before requesting assistance']);
+        return;
+    }
+
+    if (appState.uploadedFiles.length === 0) {
+        showErrors(['Please upload model files first']);
+        return;
+    }
+
+    showErrors([]);
+
+    const assistButton = document.getElementById('assist-governance-button');
+    assistButton.disabled = true;
+    const originalText = assistButton.innerHTML;
+    assistButton.innerHTML = '<span class="spinner"></span> Assisting...';
+
+    try {
+        const formData = new FormData();
+        formData.append('policyName', appState.selectedPolicy);
+        formData.append('policyId', POLICY_IDS[appState.selectedPolicy]);
+
+        // Attach the full policy JSON if available
+        const policyObj = appState.policies[appState.selectedPolicy] || null;
+        if (policyObj) {
+            formData.append('policy', JSON.stringify(policyObj));
+        }
+
+        // Append uploaded files (preserve relative path if present)
+        appState.uploadedFiles.forEach(file => {
+            const name = file.webkitRelativePath || file.name;
+            formData.append('files', file, name);
+        });
+
+        const basePath = window.location.pathname.replace(/\/$/, '');
+        const resp = await fetch(`${basePath}/assist-governance`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            throw new Error(errText || 'Assist request failed');
+        }
+
+        const data = await resp.json();
+        // Extract usable suggestions from nested gateway response
+        const suggestions = extractSuggestionsFromAssistResponse(data);
+        if (suggestions && Object.keys(suggestions).length > 0) {
+            populateSuggestedFields(suggestions);
+            const successObj = { status: 'success', data: { message: 'Assistance applied' } };
+            showSuccess(successObj);
+        } else {
+            showErrors(['No suggestions returned from assistant']);
+        }
+
+    } catch (err) {
+        console.error('Assist error', err);
+        showErrors([`Assist failed: ${err.message}`]);
+    } finally {
+        assistButton.disabled = false;
+        assistButton.innerHTML = originalText;
+    }
+}
+
+// Populate suggested fields returned by the backend
+function populateSuggestedFields(suggestions) {
+    if (!suggestions) return;
+
+    // Batch DOM lookups for performance: map data-label -> elements
+    const dynamicContainer = document.getElementById('dynamic-fields');
+    const allLabeled = Array.from(dynamicContainer.querySelectorAll('[data-label]'));
+    const labelMap = new Map();
+    const normMap = new Map();
+    const normalize = (s) => {
+        if (!s) return '';
+        return String(s).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim();
+    };
+    allLabeled.forEach(el => {
+        const lbl = el.getAttribute('data-label');
+        if (!labelMap.has(lbl)) labelMap.set(lbl, []);
+        labelMap.get(lbl).push(el);
+
+        const n = normalize(lbl);
+        if (n) {
+            if (!normMap.has(n)) normMap.set(n, []);
+            normMap.get(n).push(el);
+            // also store underscore and hyphen variants
+            const u = n.replace(/\s+/g, '_');
+            const h = n.replace(/\s+/g, '-');
+            if (!normMap.has(u)) normMap.set(u, []);
+            normMap.get(u).push(el);
+            if (!normMap.has(h)) normMap.set(h, []);
+            normMap.get(h).push(el);
+        }
+    });
+
+    // Also build a radio lookup by data-label
+    const allRadios = Array.from(dynamicContainer.querySelectorAll('input[type="radio"][data-label]'));
+    const radioMap = new Map();
+    allRadios.forEach(r => {
+        const lbl = r.getAttribute('data-label');
+        if (!radioMap.has(lbl)) radioMap.set(lbl, []);
+        radioMap.get(lbl).push(r);
+    });
+
+    // Apply suggestions
+    const entries = Object.entries(suggestions);
+    // Use requestAnimationFrame to allow UI to remain responsive on large updates
+    window.requestAnimationFrame(() => {
+        entries.forEach(([label, value]) => {
+            if (value === null || value === undefined) return;
+
+            const fields = labelMap.get(label) || [];
+            if (fields.length > 0) {
+                fields.forEach(field => {
+                    const tag = field.tagName.toLowerCase();
+                    // only auto-fill if field is empty to avoid overwriting user input
+                    const isEmpty = (field.value || '').toString().trim() === '';
+                    if ((tag === 'textarea' || (tag === 'input' && field.type === 'text')) && isEmpty) {
+                        field.value = value;
+                        field.setAttribute('data-ai-original', String(value));
+                        field.dispatchEvent(new Event('input'));
+                        field.classList.add('auto-filled');
+                        // add badge element inside parent .form-group for positioning
+                            try {
+                                const container = field.closest('.form-group') || field.parentElement;
+                                if (container && !container.querySelector('.ai-badge')) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'ai-badge';
+                                    badge.setAttribute('data-ai-original', String(value));
+                                    badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+                                    // position badge in the top-right of the form group
+                                    badge.style.position = 'absolute';
+                                    badge.style.top = '16px';
+                                    badge.style.left = '420px';
+                                    badge.style.width = '20px';
+                                    badge.style.height = '20px';
+                                    badge.style.display = 'inline-flex';
+                                    badge.style.alignItems = 'center';
+                                    badge.style.justifyContent = 'center';
+                                    badge.style.pointerEvents = 'none';
+                                    container.style.position = container.style.position || 'relative';
+                                    container.appendChild(badge);
+                                    // mark group so we can add input padding to avoid overlap
+                                    container.classList.add('has-ai-badge');
+                                }
+                            } catch (e) {
+                                // ignore
+                            }
+                        setTimeout(() => field.classList.remove('auto-filled'), 2000);
+                    }
+                });
+            } else {
+                // try normalized lookup
+                const nlabel = normalize(label);
+                const nfields = normMap.get(nlabel) || normMap.get(nlabel.replace(/\s+/g, '_')) || normMap.get(nlabel.replace(/\s+/g, '-')) || [];
+                if (nfields.length > 0) {
+                    nfields.forEach(field => {
+                        const tag = field.tagName.toLowerCase();
+                        const isEmpty = (field.value || '').toString().trim() === '';
+                        if ((tag === 'textarea' || (tag === 'input' && field.type === 'text')) && isEmpty) {
+                            field.value = value;
+                            field.setAttribute('data-ai-original', String(value));
+                            field.dispatchEvent(new Event('input'));
+                            field.classList.add('auto-filled');
+                            try {
+                                const container = field.closest('.form-group') || field.parentElement;
+                                if (container && !container.querySelector('.ai-badge')) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'ai-badge';
+                                    badge.setAttribute('data-ai-original', String(value));
+                                    badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+                                    // position badge in the top-right of the form group
+                                    badge.style.position = 'absolute';
+                                    badge.style.top = '6px';
+                                    badge.style.right = '6px';
+                                    badge.style.width = '20px';
+                                    badge.style.height = '20px';
+                                    badge.style.display = 'inline-flex';
+                                    badge.style.alignItems = 'center';
+                                    badge.style.justifyContent = 'center';
+                                    badge.style.pointerEvents = 'none';
+                                    container.style.position = container.style.position || 'relative';
+                                    container.appendChild(badge);
+                                    // mark group so we can add input padding to avoid overlap
+                                    container.classList.add('has-ai-badge');
+                                }
+                            } catch (e) {}
+                            setTimeout(() => field.classList.remove('auto-filled'), 2000);
+                        }
+                    });
+                }
+            }
+
+            // Handle radio groups: select the option that matches the suggested value
+                if (radioMap.has(label)) {
+                const radios = radioMap.get(label);
+                // Only set radio if none in the group is already checked
+                const anyChecked = radios.some(r => r.checked);
+                if (!anyChecked) {
+                    radios.forEach(r => {
+                        try {
+                            if (String(r.value).toLowerCase() === String(value).toLowerCase()) {
+                                r.checked = true;
+                                r.dispatchEvent(new Event('change'));
+                                // highlight the label containing this radio and add badge
+                                const parentLabel = r.closest('label') || r.parentElement;
+                                if (parentLabel) {
+                                    parentLabel.classList.add('auto-filled');
+                                    try {
+                                        const pcontainer = parentLabel.closest('.form-group') || parentLabel.parentElement;
+                                        if (pcontainer && !pcontainer.querySelector('.ai-badge')) {
+                                            const badge = document.createElement('span');
+                                            badge.className = 'ai-badge';
+                                            badge.setAttribute('data-ai-original', String(value));
+                                            badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+                                            // position badge in the top-right of the form group
+                                            badge.style.position = 'absolute';
+                                            badge.style.top = '6px';
+                                            badge.style.right = '6px';
+                                            badge.style.width = '20px';
+                                            badge.style.height = '20px';
+                                            badge.style.display = 'inline-flex';
+                                            badge.style.alignItems = 'center';
+                                            badge.style.justifyContent = 'center';
+                                            badge.style.pointerEvents = 'none';
+                                            pcontainer.style.position = pcontainer.style.position || 'relative';
+                                            pcontainer.appendChild(badge);
+                                            // mark group to apply padding so badge doesn't overlap input text
+                                            pcontainer.classList.add('has-ai-badge');
+                                        }
+                                    } catch (e) {}
+                                    setTimeout(() => parentLabel.classList.remove('auto-filled'), 2000);
+                                }
+                            }
+                        } catch (e) {
+                            // ignore
+                        }
+                    });
+                }
+            }
+
+            // Fallback: try to find element by a sanitized id
+            if ((!fields || fields.length === 0) && !radioMap.has(label)) {
+                const idSafe = labelToFieldId(label);
+                const fallback = document.getElementById(idSafe);
+                if (fallback) {
+                    fallback.value = value;
+                    fallback.dispatchEvent(new Event('input'));
+                }
+            }
+        });
+    });
+}
+
+
+// Extract suggestions from the assist API response, handling nested structures and code fences
+function extractSuggestionsFromAssistResponse(data) {
+    if (!data) return {};
+
+    // If the backend already returned a suggestions object mapping labels -> values, use it
+    if (data.suggestions && typeof data.suggestions === 'object' && !Array.isArray(data.suggestions)) {
+        // Detect if it's the full gateway response (with choices)
+        if (data.suggestions.choices && Array.isArray(data.suggestions.choices)) {
+            // fall through to parsing choices
+        } else {
+            return data.suggestions;
+        }
+    }
+
+    // Handle gateway-like response where suggestions contain choices
+    let contentStr = '';
+    try {
+        if (data.suggestions && data.suggestions.choices && Array.isArray(data.suggestions.choices) && data.suggestions.choices.length > 0) {
+            const choice = data.suggestions.choices[0];
+            if (choice.message && choice.message.content) {
+                contentStr = choice.message.content;
+            } else if (choice.text) {
+                contentStr = choice.text;
+            } else if (choice.output) {
+                contentStr = JSON.stringify(choice.output);
+            }
+        } else if (data.choices && Array.isArray(data.choices) && data.choices.length > 0) {
+            const choice = data.choices[0];
+            if (choice.message && choice.message.content) contentStr = choice.message.content;
+            else if (choice.text) contentStr = choice.text;
+            else contentStr = JSON.stringify(choice);
+        } else if (data.suggestions && typeof data.suggestions === 'string') {
+            contentStr = data.suggestions;
+        } else if (typeof data === 'string') {
+            contentStr = data;
+        } else if (data.suggestions && typeof data.suggestions === 'object') {
+            // maybe already contains mapping
+            return data.suggestions;
+        }
+    } catch (e) {
+        console.error('Error extracting content from assist response', e);
+        return {};
+    }
+
+    if (!contentStr) return {};
+
+    // Strip markdown code fences if present
+    const fenceMatch = contentStr.match(/```(?:json)?\n([\s\S]*?)\n```/i);
+    let jsonText = fenceMatch ? fenceMatch[1] : contentStr;
+
+    // Try to locate the first JSON object in the text
+    const objMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+        jsonText = objMatch[0];
+    }
+
+    try {
+        const parsed = JSON.parse(jsonText);
+        // If parsed contains nested choices structure, drill down
+        if (parsed.suggestions && typeof parsed.suggestions === 'object') return parsed.suggestions;
+        return parsed;
+    } catch (e) {
+        // Not JSON parseable
+        console.warn('Assist response JSON parse failed:', e.message);
+        return {};
+    }
+}
+
 // Initialize form
 function initializeForm() {
     const container = document.querySelector('.container');
@@ -624,7 +1015,7 @@ function initializeForm() {
         <div class="form-layout">
             <form id="model-upload-form" class="model-form">
                 <div class="form-columns">
-                    <div class="form-column-left">
+                    <div class="form-column-left card">
                         <div class="form-group">
                             <label for="policy-selector">Select Governance Policy <span class="required">*</span></label>
                             <select id="policy-selector" name="policySelector" required>
@@ -647,12 +1038,15 @@ function initializeForm() {
                         </div>
                         
                         <div class="form-actions">
-                            <button type="submit" class="btn btn-primary">Register AI Use Case with Domino</button>
+                            <button type="button" class="btn btn-ai" id="assist-governance-button" title="Autofill Fields">
+                                <img src="${AI_ICON_URL}" alt="ai" class="ai-inline-icon" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;">Autofill Fields
+                            </button>
+                            <button type="submit" class="btn btn-primary">Register AI Use Case</button>
                             <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
                         </div>
                     </div>
                     
-                    <div class="form-column-middle">
+                    <div class="form-column-middle card">
                         <div id="dynamic-fields">
                             <p>Please select a governance policy to see the required fields</p>
                         </div>
@@ -670,6 +1064,10 @@ function initializeForm() {
     document.getElementById('model-upload').addEventListener('change', handleFileUpload);
     document.getElementById('model-upload-form').addEventListener('submit', handleSubmit);
     document.getElementById('policy-selector').addEventListener('change', handlePolicyChange);
+    const assistBtn = document.getElementById('assist-governance-button');
+    if (assistBtn) {
+        assistBtn.addEventListener('click', handleAssistGovernance);
+    }
     
     // Load policies and set default
     loadPolicies().then(() => {

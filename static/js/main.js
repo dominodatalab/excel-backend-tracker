@@ -812,8 +812,8 @@ function populateSuggestedFields(suggestions) {
                                     badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
                                     // position badge in the top-right of the form group
                                     badge.style.position = 'absolute';
-                                    badge.style.top = '6px';
-                                    badge.style.right = '6px';
+                                    badge.style.top = '16px';
+                                    badge.style.left = '420px';
                                     badge.style.width = '20px';
                                     badge.style.height = '20px';
                                     badge.style.display = 'inline-flex';
