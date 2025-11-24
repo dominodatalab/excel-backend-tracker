@@ -8,7 +8,7 @@ from flask import Flask, render_template, request, Response, jsonify
 import queue
 import json
 
-from model_registration import register_model_handler
+from model_registration import register_model_handler, assist_governance_handler
 
 app = Flask(__name__, static_url_path='/static')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB limit
@@ -124,6 +124,12 @@ def proxy_request(path):
 def register_external_model():
     """Register an external model with Domino using MLflow."""
     return register_model_handler(request, progress_queues)
+
+
+@app.route("/assist-governance", methods=["POST"])
+def assist_governance():
+    """Call gateway LLM to assist with populating governance fields."""
+    return assist_governance_handler(request)
 
 
 def safe_domino_config():

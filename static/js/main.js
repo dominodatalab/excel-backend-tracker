@@ -612,6 +612,103 @@ async function handleSubmit(event) {
     }
 }
 
+// Handle Assist with Governance action
+async function handleAssistGovernance(event) {
+    // Basic validation
+    if (!appState.selectedPolicy) {
+        showErrors(['Please select a policy before requesting assistance']);
+        return;
+    }
+
+    if (appState.uploadedFiles.length === 0) {
+        showErrors(['Please upload model files first']);
+        return;
+    }
+
+    showErrors([]);
+
+    const assistButton = document.getElementById('assist-governance-button');
+    assistButton.disabled = true;
+    const originalText = assistButton.innerHTML;
+    assistButton.innerHTML = '<span class="spinner"></span> Assisting...';
+
+    try {
+        const formData = new FormData();
+        formData.append('policyName', appState.selectedPolicy);
+        formData.append('policyId', POLICY_IDS[appState.selectedPolicy]);
+
+        // Attach the full policy JSON if available
+        const policyObj = appState.policies[appState.selectedPolicy] || null;
+        if (policyObj) {
+            formData.append('policy', JSON.stringify(policyObj));
+        }
+
+        // Append uploaded files (preserve relative path if present)
+        appState.uploadedFiles.forEach(file => {
+            const name = file.webkitRelativePath || file.name;
+            formData.append('files', file, name);
+        });
+
+        const basePath = window.location.pathname.replace(/\/$/, '');
+        const resp = await fetch(`${basePath}/assist-governance`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            throw new Error(errText || 'Assist request failed');
+        }
+
+        const data = await resp.json();
+        if (data && data.suggestions) {
+            populateSuggestedFields(data.suggestions);
+            const successObj = { status: 'success', data: { message: 'Assistance applied' } };
+            showSuccess(successObj);
+        } else {
+            showErrors(['No suggestions returned from assistant']);
+        }
+
+    } catch (err) {
+        console.error('Assist error', err);
+        showErrors([`Assist failed: ${err.message}`]);
+    } finally {
+        assistButton.disabled = false;
+        assistButton.innerHTML = originalText;
+    }
+}
+
+// Populate suggested fields returned by the backend
+function populateSuggestedFields(suggestions) {
+    if (!suggestions) return;
+
+    Object.entries(suggestions).forEach(([label, value]) => {
+        if (value === null || value === undefined) return;
+
+        // Find inputs or textareas that have data-label equal to the label
+        const dynamicContainer = document.getElementById('dynamic-fields');
+        const selector = `[data-label]`;
+        const fields = Array.from(dynamicContainer.querySelectorAll(selector)).filter(el => el.getAttribute('data-label') === label);
+
+        if (fields.length > 0) {
+            fields.forEach(field => {
+                if (field.tagName.toLowerCase() === 'textarea' || field.type === 'text') {
+                    field.value = value;
+                    field.dispatchEvent(new Event('input'));
+                }
+            });
+        } else {
+            // If we couldn't find a field, try to match by label-like id
+            const idSafe = labelToFieldId(label);
+            const fallback = document.getElementById(idSafe);
+            if (fallback) {
+                fallback.value = value;
+                fallback.dispatchEvent(new Event('input'));
+            }
+        }
+    });
+}
+
 // Initialize form
 function initializeForm() {
     const container = document.querySelector('.container');
@@ -648,6 +745,9 @@ function initializeForm() {
                         
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">Register AI Use Case with Domino</button>
+                            <button type="button" class="btn btn-ai" id="assist-governance-button" title="Assist with Governance">
+                                <i class="fas fa-robot"></i>&nbsp;Assist with Governance
+                            </button>
                             <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
                         </div>
                     </div>
@@ -670,6 +770,10 @@ function initializeForm() {
     document.getElementById('model-upload').addEventListener('change', handleFileUpload);
     document.getElementById('model-upload-form').addEventListener('submit', handleSubmit);
     document.getElementById('policy-selector').addEventListener('change', handlePolicyChange);
+    const assistBtn = document.getElementById('assist-governance-button');
+    if (assistBtn) {
+        assistBtn.addEventListener('click', handleAssistGovernance);
+    }
     
     // Load policies and set default
     loadPolicies().then(() => {

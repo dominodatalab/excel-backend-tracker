@@ -156,6 +156,133 @@ def save_uploaded_files(files, temp_dir):
     return saved_files
 
 
+def assist_governance_handler(request):
+    """Use a Domino gateway LLM to suggest values for governance policy fields based on uploaded files.
+
+    Expects: form fields `policyName`, `policyId`, optional `policy` (JSON string), and file uploads named `files`.
+    Returns: JSON { status: 'success', suggestions: { '<label>': '<value>', ... } }
+    """
+    temp_dir = None
+    try:
+        policy_name = request.form.get('policyName')
+        policy_id = request.form.get('policyId')
+        policy_json = request.form.get('policy')
+
+        files = request.files.getlist('files')
+        temp_dir = tempfile.mkdtemp(prefix=f"assist_{policy_name}_")
+        saved_files = save_uploaded_files(files, temp_dir)
+
+        # Read uploaded file contents (text only) with size limits
+        # For pickle files, attempt to disassemble and extract readable strings
+        file_texts = {}
+        for sf in saved_files:
+            p = sf.get('path')
+            name = Path(p).name
+            content = None
+            try:
+                lower_name = name.lower()
+                if lower_name.endswith(('.pkl', '.pickle')):
+                    # Try to disassemble the pickle to get module/class names and other readable tokens
+                    try:
+                        import pickletools
+                        import io as _io
+                        with open(p, 'rb') as fh:
+                            data = fh.read()
+                        sio = _io.StringIO()
+                        try:
+                            pickletools.dis(data, out=sio)
+                            disasm = sio.getvalue()
+                            content = f"[PICKLE_DISASSEMBLY]\n{disasm[:20000]}"
+                        except Exception:
+                            # If disassembly fails, fall back to extracting printable ASCII sequences
+                            strings = re.findall(rb'([ -~]{4,})', data)
+                            combined = b'\n'.join(strings).decode('utf-8', errors='replace')
+                            content = f"[PICKLE_STRINGS]\n{combined[:20000]}"
+                    except Exception:
+                        content = None
+                else:
+                    with open(p, 'r', encoding='utf-8', errors='replace') as fh:
+                        content = fh.read(20000)  # limit to 20k chars per file
+            except Exception:
+                content = None
+            file_texts[name] = content
+
+        # Build prompt for LLM
+        policy_part = policy_json if policy_json else f"Policy ID: {policy_id}"
+        prompt = (
+            "You are a governance assistant. Using ONLY the provided files and the policy information, "
+            "suggest values for the policy's evidence variables. Return a single valid JSON object mapping exact "
+            "field labels to suggested values. If a value cannot be determined from the files, return null for that label. "
+            "Do not invent unrelated facts. Be concise.\n\n"
+        )
+        prompt += f"POLICY:\n{policy_part}\n\nFILES:\n"
+        for name, content in file_texts.items():
+            prompt += f"--- {name} ---\n"
+            prompt += (content[:5000] if content else "[binary or unreadable]") + "\n\n"
+
+        prompt += "\nReturn only JSON, e.g. {\"Model Description\": \"...\", \"Model Owner\": \"...\" }\n"
+
+        # Call Domino gateway LLM via MLflow deployments
+        from mlflow.deployments import get_deploy_client
+        client = get_deploy_client(os.environ['DOMINO_MLFLOW_DEPLOYMENTS'])
+        endpoint = os.environ.get('DOMINO_GATEWAY_LLM_ENDPOINT', 'fsi-chatbot')
+        logger.info(f"Calling gateway LLM endpoint: {endpoint}")
+
+        response = client.predict(endpoint=endpoint, inputs={"messages": [{"role": "user", "content": prompt}]})
+
+        # Attempt to extract text from the response
+        suggestions_raw = None
+        if isinstance(response, dict):
+            # common keys to check
+            for k in ('predictions', 'outputs', 'result', 'text'):
+                if k in response:
+                    suggestions_raw = response[k]
+                    break
+            if suggestions_raw is None:
+                suggestions_raw = json.dumps(response)
+        else:
+            suggestions_raw = str(response)
+
+        # Convert to string if list or other
+        if isinstance(suggestions_raw, (list, dict)):
+            suggestions_str = json.dumps(suggestions_raw)
+        else:
+            suggestions_str = str(suggestions_raw)
+
+        # Try to parse JSON out of the model response
+        suggestions = {}
+        try:
+            suggestions = json.loads(suggestions_str)
+        except Exception:
+            # Try to extract a JSON object substring
+            m = re.search(r"\{[\s\S]*\}", suggestions_str)
+            if m:
+                try:
+                    suggestions = json.loads(m.group(0))
+                except Exception:
+                    suggestions = {}
+
+        # Ensure keys are strings and values are simple types
+        clean_suggestions = {}
+        for k, v in (suggestions.items() if isinstance(suggestions, dict) else []):
+            try:
+                clean_suggestions[str(k).strip()] = v
+            except Exception:
+                continue
+
+        return jsonify({"status": "success", "suggestions": clean_suggestions}), 200
+
+    except Exception as e:
+        logger.error(f"assist_governance_handler error: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        if temp_dir and Path(temp_dir).exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+
 def update_model_description(model_name: str, description: str) -> dict:
     """Update model description via Domino API and return full response."""
     domain = DOMINO_DOMAIN.removeprefix("https://").removeprefix("http://")
