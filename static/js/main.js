@@ -397,7 +397,7 @@ function updateProgress(data) {
 // Hide loading state
 function hideLoading(button) {
     button.disabled = false;
-    button.innerHTML = 'Register AI Use Case with Domino';
+    button.innerHTML = 'Register AI Use Case';
     
     const progressContainer = document.getElementById('progress-container');
     if (progressContainer) {
@@ -800,6 +800,16 @@ function populateSuggestedFields(suggestions) {
                                 badge.className = 'ai-badge';
                                 badge.setAttribute('data-ai-original', String(value));
                                 badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+                                // position badge in the top-right of the form group
+                                badge.style.position = 'absolute';
+                                badge.style.top = '6px';
+                                badge.style.right = '6px';
+                                badge.style.width = '20px';
+                                badge.style.height = '20px';
+                                badge.style.display = 'inline-flex';
+                                badge.style.alignItems = 'center';
+                                badge.style.justifyContent = 'center';
+                                badge.style.pointerEvents = 'none';
                                 parent.style.position = parent.style.position || 'relative';
                                 parent.appendChild(badge);
                             }
@@ -829,6 +839,16 @@ function populateSuggestedFields(suggestions) {
                                     badge.className = 'ai-badge';
                                     badge.setAttribute('data-ai-original', String(value));
                                     badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+                                    // position badge in the top-right of the form group
+                                    badge.style.position = 'absolute';
+                                    badge.style.top = '6px';
+                                    badge.style.right = '6px';
+                                    badge.style.width = '20px';
+                                    badge.style.height = '20px';
+                                    badge.style.display = 'inline-flex';
+                                    badge.style.alignItems = 'center';
+                                    badge.style.justifyContent = 'center';
+                                    badge.style.pointerEvents = 'none';
                                     parent.style.position = parent.style.position || 'relative';
                                     parent.appendChild(badge);
                                 }
@@ -861,6 +881,16 @@ function populateSuggestedFields(suggestions) {
                                             badge.className = 'ai-badge';
                                             badge.setAttribute('data-ai-original', String(value));
                                             badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+                                            // position badge in the top-right of the form group
+                                            badge.style.position = 'absolute';
+                                            badge.style.top = '6px';
+                                            badge.style.right = '6px';
+                                            badge.style.width = '20px';
+                                            badge.style.height = '20px';
+                                            badge.style.display = 'inline-flex';
+                                            badge.style.alignItems = 'center';
+                                            badge.style.justifyContent = 'center';
+                                            badge.style.pointerEvents = 'none';
                                             pcontainer.style.position = pcontainer.style.position || 'relative';
                                             pcontainer.appendChild(badge);
                                         }
@@ -992,10 +1022,10 @@ function initializeForm() {
                         </div>
                         
                         <div class="form-actions">
-                            <button type="submit" class="btn btn-primary">Register AI Use Case with Domino</button>
                             <button type="button" class="btn btn-ai" id="assist-governance-button" title="Autofill Fields">
-                                Autofill Fields&nbsp;<img src="${AI_ICON_URL}" alt="ai" class="ai-inline-icon" style="width:16px;height:16px;vertical-align:middle;">
+                                <img src="${AI_ICON_URL}" alt="ai" class="ai-inline-icon" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;">Autofill Fields
                             </button>
+                            <button type="submit" class="btn btn-primary">Register AI Use Case</button>
                             <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
                         </div>
                     </div>
