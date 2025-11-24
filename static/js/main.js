@@ -902,16 +902,6 @@ function populateSuggestedFields(suggestions) {
                                     badge.className = 'ai-badge';
                                     badge.setAttribute('data-ai-original', String(value));
                                     badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
-                                    // position badge in the top-right of the form group
-                                    badge.style.position = 'absolute';
-                                    badge.style.top = '16px';
-                                    badge.style.left = '420px';
-                                    badge.style.width = '20px';
-                                    badge.style.height = '20px';
-                                    badge.style.display = 'inline-flex';
-                                    badge.style.alignItems = 'center';
-                                    badge.style.justifyContent = 'center';
-                                    badge.style.pointerEvents = 'none';
                                     container.style.position = container.style.position || 'relative';
                                     container.appendChild(badge);
                                     // mark group so we can add input padding to avoid overlap
@@ -943,16 +933,6 @@ function populateSuggestedFields(suggestions) {
                                     badge.className = 'ai-badge';
                                     badge.setAttribute('data-ai-original', String(value));
                                     badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
-                                    // position badge in the top-right of the form group
-                                    badge.style.position = 'absolute';
-                                    badge.style.top = '6px';
-                                    badge.style.right = '6px';
-                                    badge.style.width = '20px';
-                                    badge.style.height = '20px';
-                                    badge.style.display = 'inline-flex';
-                                    badge.style.alignItems = 'center';
-                                    badge.style.justifyContent = 'center';
-                                    badge.style.pointerEvents = 'none';
                                     container.style.position = container.style.position || 'relative';
                                     container.appendChild(badge);
                                     // mark group so we can add input padding to avoid overlap
@@ -987,16 +967,6 @@ function populateSuggestedFields(suggestions) {
                                             badge.className = 'ai-badge';
                                             badge.setAttribute('data-ai-original', String(value));
                                             badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
-                                            // position badge in the top-right of the form group
-                                            badge.style.position = 'absolute';
-                                            badge.style.top = '6px';
-                                            badge.style.right = '6px';
-                                            badge.style.width = '20px';
-                                            badge.style.height = '20px';
-                                            badge.style.display = 'inline-flex';
-                                            badge.style.alignItems = 'center';
-                                            badge.style.justifyContent = 'center';
-                                            badge.style.pointerEvents = 'none';
                                             pcontainer.style.position = pcontainer.style.position || 'relative';
                                             pcontainer.appendChild(badge);
                                             // mark group to apply padding so badge doesn't overlap input text

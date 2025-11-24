@@ -482,6 +482,41 @@ label.auto-filled {
 [data-ai-tooltip] {
   position: relative;
 }
+
+/* Autofill button - medium outline matching AI icon color */
+.btn-ai {
+  outline: 3px solid #F59E0B;
+  outline-offset: 2px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: var(--r-xs);
+}
+.btn-ai:hover:not(:disabled) {
+  filter: brightness(0.98);
+}
+.btn-ai:focus-visible {
+  box-shadow: 0 0 0 4px color-mix(in srgb, #F59E0B 12%, transparent);
+}
+
+/* Robust badge placement: top-right inside the form-group */
+.form-group { position: relative; }
+.ai-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.95);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  z-index: 3;
+}
+.ai-badge img { width: 16px; height: 16px; display: block; }
 [data-ai-tooltip]::after {
   content: attr(data-ai-tooltip);
   position: absolute;
