@@ -206,6 +206,7 @@ def assist_governance_handler(request):
             except Exception:
                 content = None
             file_texts[name] = content
+            
 
         # Build prompt for LLM
         policy_part = policy_json if policy_json else f"Policy ID: {policy_id}"
