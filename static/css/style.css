@@ -503,8 +503,8 @@ label.auto-filled {
 .form-group { position: relative; }
 .ai-badge {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 16px;
+  left: 420px;
   width: 22px;
   height: 22px;
   display: inline-flex;

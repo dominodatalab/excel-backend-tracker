@@ -703,6 +703,8 @@ async function handleAssistGovernance(event) {
     let ellIdx = 0;
     const savedValues = new Map();
     const savedRadioDisabled = new Map();
+    // Initialize assist button text with the first ellipsis state
+    try { assistButton.innerHTML = `<span class="spinner"></span> Assisting${ellipsisStates[ellIdx]}`; } catch (e) {}
     // Put text fields into readonly and start animation
     animFields.forEach(f => {
         savedValues.set(f, f.value);
@@ -735,6 +737,8 @@ async function handleAssistGovernance(event) {
         animFields.forEach(f => {
             try { f.value = ellipsisStates[ellIdx]; } catch (e) {}
         });
+        // Update the assist button text to animate the ellipsis
+        try { assistButton.innerHTML = `<span class="spinner"></span> Assisting${ellipsisStates[ellIdx]}`; } catch (e) {}
     }, 450);
 
     try {
