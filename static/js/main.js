@@ -165,12 +165,13 @@ function generateDynamicFields(policy) {
                     if (orig !== null) {
                 const cur = (el.value || '').toString();
                 if (cur !== orig) {
-                    // remove badge if present (look on the closest .form-group)
+                    // remove badge if present (look in input-wrapper first, then form-group)
+                    const wrapper = el.closest('.input-wrapper');
                     const group = el.closest('.form-group');
-                    const badge = group ? group.querySelector('.ai-badge') : null;
+                    const badge = wrapper ? wrapper.querySelector('.ai-badge') : (group ? group.querySelector('.ai-badge') : null);
                     if (badge) {
                         badge.remove();
-                        group.classList.remove('has-ai-badge');
+                        if (group) group.classList.remove('has-ai-badge');
                     }
                     el.removeAttribute('data-ai-original');
                     el.classList.remove('auto-filled');
@@ -773,6 +774,33 @@ async function handleAssistGovernance(event) {
     }
 }
 
+// Helper function to add AI badge to an input field
+function addAiBadgeToField(field, value) {
+    // Wrap field in input-wrapper if not already wrapped
+    let wrapper = field.parentElement;
+    if (!wrapper || !wrapper.classList.contains('input-wrapper')) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'input-wrapper';
+        field.parentNode.insertBefore(wrapper, field);
+        wrapper.appendChild(field);
+    }
+
+    // Add badge if not already present
+    if (!wrapper.querySelector('.ai-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'ai-badge';
+        badge.setAttribute('data-ai-original', String(value));
+        badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
+        wrapper.appendChild(badge);
+
+        // Mark the form-group for padding
+        const formGroup = wrapper.closest('.form-group');
+        if (formGroup) {
+            formGroup.classList.add('has-ai-badge');
+        }
+    }
+}
+
 // Populate suggested fields returned by the backend
 function populateSuggestedFields(suggestions) {
     if (!suggestions) return;
@@ -832,22 +860,12 @@ function populateSuggestedFields(suggestions) {
                         field.setAttribute('data-ai-original', String(value));
                         field.dispatchEvent(new Event('input'));
                         field.classList.add('auto-filled');
-                        // add badge element inside parent .form-group for positioning
-                            try {
-                                const container = field.closest('.form-group') || field.parentElement;
-                                if (container && !container.querySelector('.ai-badge')) {
-                                    const badge = document.createElement('span');
-                                    badge.className = 'ai-badge';
-                                    badge.setAttribute('data-ai-original', String(value));
-                                    badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
-                                    container.style.position = container.style.position || 'relative';
-                                    container.appendChild(badge);
-                                    // mark group so we can add input padding to avoid overlap
-                                    container.classList.add('has-ai-badge');
-                                }
-                            } catch (e) {
-                                // ignore
-                            }
+                        // Add AI badge using helper function
+                        try {
+                            addAiBadgeToField(field, value);
+                        } catch (e) {
+                            // ignore
+                        }
                         setTimeout(() => field.classList.remove('auto-filled'), 2000);
                     }
                 });
@@ -865,17 +883,7 @@ function populateSuggestedFields(suggestions) {
                             field.dispatchEvent(new Event('input'));
                             field.classList.add('auto-filled');
                             try {
-                                const container = field.closest('.form-group') || field.parentElement;
-                                if (container && !container.querySelector('.ai-badge')) {
-                                    const badge = document.createElement('span');
-                                    badge.className = 'ai-badge';
-                                    badge.setAttribute('data-ai-original', String(value));
-                                    badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
-                                    container.style.position = container.style.position || 'relative';
-                                    container.appendChild(badge);
-                                    // mark group so we can add input padding to avoid overlap
-                                    container.classList.add('has-ai-badge');
-                                }
+                                addAiBadgeToField(field, value);
                             } catch (e) {}
                             setTimeout(() => field.classList.remove('auto-filled'), 2000);
                         }
@@ -894,21 +902,24 @@ function populateSuggestedFields(suggestions) {
                             if (String(r.value).toLowerCase() === String(value).toLowerCase()) {
                                 r.checked = true;
                                 r.dispatchEvent(new Event('change'));
-                                // highlight the label containing this radio and add badge
+                                // highlight the label containing this radio and add badge to form group
                                 const parentLabel = r.closest('label') || r.parentElement;
                                 if (parentLabel) {
                                     parentLabel.classList.add('auto-filled');
                                     try {
-                                        const pcontainer = parentLabel.closest('.form-group') || parentLabel.parentElement;
-                                        if (pcontainer && !pcontainer.querySelector('.ai-badge')) {
+                                        // For radio buttons, add badge to the form-group level
+                                        const formGroup = parentLabel.closest('.form-group');
+                                        if (formGroup && !formGroup.querySelector('.ai-badge')) {
                                             const badge = document.createElement('span');
                                             badge.className = 'ai-badge';
+                                            badge.style.position = 'absolute';
+                                            badge.style.top = '6px';
+                                            badge.style.right = '6px';
                                             badge.setAttribute('data-ai-original', String(value));
                                             badge.innerHTML = `<img src="${AI_ICON_URL}" alt="ai"/>`;
-                                            pcontainer.style.position = pcontainer.style.position || 'relative';
-                                            pcontainer.appendChild(badge);
-                                            // mark group to apply padding so badge doesn't overlap input text
-                                            pcontainer.classList.add('has-ai-badge');
+                                            formGroup.style.position = 'relative';
+                                            formGroup.appendChild(badge);
+                                            formGroup.classList.add('has-ai-badge');
                                         }
                                     } catch (e) {}
                                     setTimeout(() => parentLabel.classList.remove('auto-filled'), 2000);
