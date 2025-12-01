@@ -236,6 +236,7 @@ def assist_governance_handler(request):
         # EXTRACT ARTIFACT LABELS FROM POLICY JSON
         # -----------------------------
         artifact_labels = []
+        range_instructions = []
         if policy_json:
             try:
                 pdata = json.loads(policy_json)
@@ -245,12 +246,24 @@ def assist_governance_handler(request):
                             lbl = art.get("details", {}).get("label")
                             if lbl:
                                 artifact_labels.append(lbl)
+                                # Check if label contains a range pattern like (1-10)
+                                range_match = re.search(r'\((\d+)\s*[-–]\s*(\d+)\)', lbl)
+                                if range_match:
+                                    min_val = range_match.group(1)
+                                    max_val = range_match.group(2)
+                                    range_instructions.append(
+                                        f'- "{lbl}": Return ONLY an integer value between {min_val} and {max_val} (inclusive). No text, no decimals.'
+                                    )
             except Exception:
                 pass
 
         # -----------------------------
         # BUILD SYSTEM PROMPT
         # -----------------------------
+        range_rules = ""
+        if range_instructions:
+            range_rules = "\n\nSPECIAL FIELD RULES:\n" + "\n".join(range_instructions)
+
         system_prompt = (
             "You are a strict JSON-producing governance assistant. "
             "Your ONLY task is to fill evidence values for a Domino governance policy.\n\n"
@@ -261,6 +274,7 @@ def assist_governance_handler(request):
             "4. Infer a value whenever probable; use null only if improbable.\n"
             "5. Do not invent keys.\n"
             "6. Be deterministic.\n"
+            f"{range_rules}"
         )
 
         # -----------------------------
