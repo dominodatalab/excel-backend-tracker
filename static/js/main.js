@@ -265,31 +265,41 @@ function displayUploadedFiles() {
     `;
 }
 
+// Helper function to normalize label - matches backend normalize_label()
+function normalizeLabel(label) {
+    let normalized = label.toLowerCase().trim();
+    // Remove range patterns like (1-10) to match backend behavior
+    normalized = normalized.replace(/\(\s*\d+\s*[-–]\s*\d+\s*\)/g, '');
+    // Remove non-word, non-space characters (but keep hyphens temporarily)
+    normalized = normalized.replace(/[^\w\s-]/g, '');
+    // Replace spaces with underscores
+    normalized = normalized.replace(/\s+/g, '_');
+    // Remove hyphens (backend keeps them during intermediate step but they get converted)
+    normalized = normalized.replace(/-/g, '_');
+    return normalized;
+}
+
 // Collect all dynamic field values
 function collectDynamicFields() {
     const dynamicData = {};
     const dynamicContainer = document.getElementById('dynamic-fields');
-    
+
     // Collect all inputs and textareas
     dynamicContainer.querySelectorAll('input[type="text"], textarea').forEach(field => {
         const label = field.getAttribute('data-label');
         if (label) {
-            const key = label.toLowerCase()
-                .replace(/[^\w\s]/g, '')
-                .replace(/\s+/g, '_');  // Use underscore for consistency with backend
+            const key = normalizeLabel(label);
             dynamicData[key] = field.value.trim();
         }
     });
-    
+
     // Collect radio buttons
     dynamicContainer.querySelectorAll('.radio-group').forEach(group => {
         const checkedRadio = group.querySelector('input[type="radio"]:checked');
         if (checkedRadio) {
             const label = checkedRadio.getAttribute('data-label');
             if (label) {
-                const key = label.toLowerCase()
-                    .replace(/[^\w\s]/g, '')
-                    .replace(/\s+/g, '_');  // Use underscore for consistency with backend
+                const key = normalizeLabel(label);
                 const value = checkedRadio.value;
                 // Convert Yes/No to boolean for backend
                 if (value === 'Yes' || value === 'No') {
@@ -300,7 +310,7 @@ function collectDynamicFields() {
             }
         }
     });
-    
+
     return dynamicData;
 }
 
@@ -811,16 +821,13 @@ function populateSuggestedFields(suggestions) {
     const allLabeled = Array.from(dynamicContainer.querySelectorAll('[data-label]'));
     const labelMap = new Map();
     const normMap = new Map();
-    const normalize = (s) => {
-        if (!s) return '';
-        return String(s).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim();
-    };
+
     allLabeled.forEach(el => {
         const lbl = el.getAttribute('data-label');
         if (!labelMap.has(lbl)) labelMap.set(lbl, []);
         labelMap.get(lbl).push(el);
 
-        const n = normalize(lbl);
+        const n = normalizeLabel(lbl);
         if (n) {
             if (!normMap.has(n)) normMap.set(n, []);
             normMap.get(n).push(el);
@@ -872,7 +879,7 @@ function populateSuggestedFields(suggestions) {
                 });
             } else {
                 // try normalized lookup
-                const nlabel = normalize(label);
+                const nlabel = normalizeLabel(label);
                 const nfields = normMap.get(nlabel) || normMap.get(nlabel.replace(/\s+/g, '_')) || normMap.get(nlabel.replace(/\s+/g, '-')) || [];
                 if (nfields.length > 0) {
                     nfields.forEach(field => {
@@ -935,7 +942,7 @@ function populateSuggestedFields(suggestions) {
 
             // Fallback: try to find element by a sanitized id
             if ((!fields || fields.length === 0) && !radioMap.has(label)) {
-                const idSafe = labelToFieldId(label);
+                const idSafe = normalizeLabel(label);
                 const fallback = document.getElementById(idSafe);
                 if (fallback) {
                     fallback.value = value;

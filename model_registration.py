@@ -656,18 +656,9 @@ def register_model_handler(request, progress_queues):
                         if unique_key not in seen_keys:
                             seen_keys.add(unique_key)
                             # Try to find matching value in dynamic fields
-                            # normalized_key = label.lower().replace(' ', '_').replace('?', '').replace(',', '').replace("'", '')
-                            # normalized_key_hyphen = normalized_key.replace('_', '-')
-                            # value = None
+                            # IMPORTANT: Initialize value to None for each artifact
+                            value = None
 
-                            # # Try different key variations
-                            # for field_key, field_value in dynamic_fields.items():
-                            #     if (field_key == normalized_key or
-                            #         field_key == normalized_key_hyphen or
-                            #         field_key.replace('-', '_') == normalized_key or
-                            #         field_key.replace('_', '-') == normalized_key_hyphen):
-                            #         value = field_value
-                            #         break
                             normalized_key = normalize_label(label)
                             for field_key, field_value in dynamic_fields.items():
                                 if normalize_label(field_key) == normalized_key:
