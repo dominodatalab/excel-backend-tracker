@@ -1,35 +1,37 @@
-# app.py
 import os
-import logging
-from urllib.parse import urljoin
-
-import requests
-from flask import Flask, render_template, request, Response, jsonify
-import queue
 import json
-
-from model_registration import register_model_handler, assist_governance_handler
+import sqlite3
+import logging
+from datetime import datetime
+from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__, static_url_path='/static')
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB limit
+CORS(app)
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(levelname)s:%(name)s:%(message)s'
 )
 logger = logging.getLogger(__name__)
-logging.getLogger('werkzeug').setLevel(logging.INFO)
-logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
-DOMINO_DOMAIN = os.environ.get("DOMINO_DOMAIN", "se-demo.domino.tech")
-DOMINO_API_KEY = os.environ.get("DOMINO_USER_API_KEY", "")
-DOMINO_PROJECT_ID = os.environ.get("DOMINO_PROJECT_ID", "")
+DATABASE_PATH = os.environ.get("DATABASE_PATH", "events.db")
 
-logger.info(f"DOMINO_DOMAIN: {DOMINO_DOMAIN}")
-logger.info(f"DOMINO_API_KEY: {'***' if DOMINO_API_KEY else 'NOT SET'}")
-logger.info(f"DOMINO_PROJECT_ID: {DOMINO_PROJECT_ID}")
 
-progress_queues = {}
+def init_db():
+    """Initialize the SQLite database with events table."""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            payload TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    logger.info(f"Database initialized at {DATABASE_PATH}")
 
 
 @app.route("/_stcore/health")
@@ -37,117 +39,100 @@ def health():
     return "", 200
 
 
-@app.route("/_stcore/host-config")
-def host_config():
-    return "", 200
-
-
-@app.route("/register-progress/<request_id>")
-def register_progress(request_id):
-    """SSE endpoint for progress updates."""
-    def generate():
-        q = queue.Queue()
-        progress_queues[request_id] = q
-        try:
-            while True:
-                data = q.get()
-                if data.get('done'):
-                    break
-                yield f"data: {json.dumps(data)}\n\n"
-        finally:
-            if request_id in progress_queues:
-                del progress_queues[request_id]
-    
-    return Response(generate(), mimetype='text/event-stream')
-
-
-@app.route("/proxy/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-def proxy_request(path):
-    """Proxy requests to upstream services."""
-    logger.info(f"Proxy request: {request.method} {path}")
-    
-    if request.method == "OPTIONS":
-        return "", 204
-    
-    target_base = request.args.get('target')
-    if not target_base:
-        return jsonify({"error": "Missing target URL. Use ?target=https://api.example.com"}), 400
-    
-    upstream_url = urljoin(target_base.rstrip("/") + "/", path)
-    
-    skip_headers = {"host", "content-length", "transfer-encoding", "connection", "keep-alive", "authorization"}
-    forward_headers = {k: v for k, v in request.headers if k.lower() not in skip_headers}
-    upstream_params = {k: v for k, v in request.args.items() if k != 'target'}
-    
-    logger.info(f"Making upstream request: {request.method} {upstream_url}")
-    
-    try:
-        resp = requests.request(
-            method=request.method,
-            url=upstream_url,
-            params=upstream_params,
-            data=request.get_data(),
-            headers=forward_headers,
-            timeout=30,
-            stream=True
-        )
-        
-        logger.info(f"Upstream response: {resp.status_code}")
-        
-        hop_by_hop = {"content-encoding", "transfer-encoding", "connection", "keep-alive"}
-        response_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in hop_by_hop]
-        
-        if resp.status_code >= 400:
-            try:
-                content = resp.content
-                logger.error(f"Upstream error response: {content[:1000].decode('utf-8', errors='ignore')}")
-                return Response(content, status=resp.status_code, headers=response_headers)
-            except Exception as e:
-                logger.error(f"Error reading response content: {e}")
-        
-        return Response(
-            resp.iter_content(chunk_size=8192),
-            status=resp.status_code,
-            headers=response_headers,
-            direct_passthrough=True
-        )
-        
-    except requests.RequestException as e:
-        logger.error(f"Proxy request failed: {e}")
-        return jsonify({"error": f"Proxy request failed: {e}"}), 502
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return jsonify({"error": f"Unexpected error: {e}"}), 500
-
-
-@app.route("/register-external-model", methods=["POST"])
-def register_external_model():
-    """Register an external model with Domino using MLflow."""
-    return register_model_handler(request, progress_queues)
-
-
-@app.route("/assist-governance", methods=["POST"])
-def assist_governance():
-    """Call gateway LLM to assist with populating governance fields."""
-    return assist_governance_handler(request)
-
-
-def safe_domino_config():
-    """Return sanitized Domino configuration for templates."""
-    return {
-        "PROJECT_ID": DOMINO_PROJECT_ID,
-        "RUN_HOST_PATH": os.environ.get("DOMINO_RUN_HOST_PATH", ""),
-        "API_BASE": DOMINO_DOMAIN,
-        "API_KEY": DOMINO_API_KEY,
-    }
-
-
 @app.route("/")
 def home():
-    return render_template("index.html", DOMINO=safe_domino_config())
+    return render_template("index.html")
+
+
+@app.route("/api/events", methods=["POST"])
+def receive_event():
+    """
+    Receive JSON event data and store it in the database.
+    Accepts any JSON payload and stores it as-is.
+    """
+    try:
+        # Get JSON payload from request
+        payload = request.get_json(force=True)
+
+        if payload is None:
+            return jsonify({"error": "Invalid JSON payload"}), 400
+
+        # Store in database
+        timestamp = datetime.utcnow().isoformat()
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO events (timestamp, payload) VALUES (?, ?)",
+            (timestamp, json.dumps(payload))
+        )
+        conn.commit()
+        event_id = cursor.lastrowid
+        conn.close()
+
+        logger.info(f"Event {event_id} stored successfully")
+
+        return jsonify({
+            "status": "success",
+            "id": event_id,
+            "timestamp": timestamp
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error storing event: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/events", methods=["GET"])
+def get_events():
+    """
+    Retrieve events from the database.
+    Query parameters:
+    - limit: number of events to return (default: 100)
+    - offset: offset for pagination (default: 0)
+    """
+    try:
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, timestamp, payload FROM events ORDER BY id DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        )
+        rows = cursor.fetchall()
+
+        # Get total count
+        cursor.execute("SELECT COUNT(*) FROM events")
+        total_count = cursor.fetchone()[0]
+
+        conn.close()
+
+        # Format events
+        events = []
+        for row in rows:
+            events.append({
+                "id": row[0],
+                "timestamp": row[1],
+                "payload": json.loads(row[2])
+            })
+
+        return jsonify({
+            "events": events,
+            "total": total_count,
+            "limit": limit,
+            "offset": offset
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving events: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
+    # Initialize database on startup
+    init_db()
+
     port = int(os.environ.get("PORT", 8888))
     logger.info(f"Starting Flask app on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
